@@ -172,6 +172,17 @@ F10 -> ~/.local/bin/motogp20-trackir-toggle
 Pause only stops TrackIR from moving the virtual right stick. Your Xbox
 controller passthrough continues to work.
 
+The adapter also watches the LinuxTrack/NPClient-style flag files used by many
+desktop TrackIR hotkey setups:
+
+```text
+/tmp/linuxtrack_npclient_center
+/tmp/linuxtrack_npclient_pause
+```
+
+If your existing `F9`/`F10` bindings already create those files, they should
+work with this adapter too.
+
 Example combined launch option:
 
 ```bash

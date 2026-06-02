@@ -14,6 +14,8 @@ STATE_DIR = Path.home() / ".local/state/motogp20-trackir-gamepad"
 PID_FILE = STATE_DIR / "adapter.pid"
 CENTER_FLAG = Path("/tmp/motogp20_trackir_recenter")
 PAUSE_FLAG = Path("/tmp/motogp20_trackir_pause")
+COMPAT_CENTER_FLAG = Path("/tmp/linuxtrack_npclient_center")
+COMPAT_PAUSE_FLAG = Path("/tmp/linuxtrack_npclient_pause")
 
 
 def die(message):
@@ -258,11 +260,12 @@ def main():
     look_back_pressed = False
     try:
         while running:
-            if CENTER_FLAG.exists():
-                try:
-                    CENTER_FLAG.unlink()
-                except FileNotFoundError:
-                    pass
+            if CENTER_FLAG.exists() or COMPAT_CENTER_FLAG.exists():
+                for flag in (CENTER_FLAG, COMPAT_CENTER_FLAG):
+                    try:
+                        flag.unlink()
+                    except FileNotFoundError:
+                        pass
                 trackir.recenter_next_pose()
                 look_back_pressed = False
                 ui.write(ecodes.EV_KEY, ecodes.BTN_THUMBR, 0)
@@ -270,7 +273,7 @@ def main():
                 ui.write(ecodes.EV_ABS, ecodes.ABS_RY, 0)
                 ui.syn()
 
-            paused = PAUSE_FLAG.exists()
+            paused = PAUSE_FLAG.exists() or COMPAT_PAUSE_FLAG.exists()
             if paused != trackir.paused:
                 trackir.set_paused(paused)
                 look_back_pressed = False
