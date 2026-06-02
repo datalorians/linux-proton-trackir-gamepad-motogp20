@@ -126,6 +126,17 @@ MOTOGP20_TRACKIR_INVERT_YAW=0
 MOTOGP20_TRACKIR_INVERT_PITCH=1
 ```
 
+Trigger look-behind from a large head turn:
+
+```bash
+MOTOGP20_TRACKIR_LOOK_BACK_DEG=35
+MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG=28
+```
+
+When head yaw passes `MOTOGP20_TRACKIR_LOOK_BACK_DEG`, the adapter presses the
+virtual right-stick-click button. It releases after yaw returns below
+`MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG`, which prevents flicker near the edge.
+
 ## 🎯 Recentering
 
 The adapter automatically centers TrackIR on the first valid pose it reads.

@@ -88,10 +88,13 @@ class TrackIR:
         self.pitch_range = float(os.environ.get("MOTOGP20_TRACKIR_PITCH_DEG", "30"))
         self.invert_yaw = os.environ.get("MOTOGP20_TRACKIR_INVERT_YAW", "1") == "1"
         self.invert_pitch = os.environ.get("MOTOGP20_TRACKIR_INVERT_PITCH", "0") == "1"
+        self.look_back_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_DEG", "35"))
+        self.look_back_release_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG", "28"))
         self.profile = os.environ.get("MOTOGP20_TRACKIR_PROFILE", "")
         self.center_yaw = None
         self.center_pitch = None
         self.paused = False
+        self.look_back_active = False
 
     def recenter_next_pose(self):
         self.center_yaw = None
@@ -99,6 +102,8 @@ class TrackIR:
 
     def set_paused(self, paused):
         self.paused = paused
+        if paused:
+            self.look_back_active = False
 
     def start(self):
         if not self.enabled:
@@ -141,7 +146,7 @@ class TrackIR:
         if not self.ok:
             return None
         if self.paused:
-            return 0, 0
+            return 0, 0, False
         yaw = ctypes.c_float()
         pitch = ctypes.c_float()
         roll = ctypes.c_float()
@@ -164,15 +169,24 @@ class TrackIR:
             self.center_yaw = yaw.value
             self.center_pitch = pitch.value
             print(f"TrackIR centered at yaw={self.center_yaw:.2f}, pitch={self.center_pitch:.2f}.")
-            return 0, 0
+            self.look_back_active = False
+            return 0, 0, False
 
-        x = clamp(angle_delta(yaw.value, self.center_yaw) / self.yaw_range, -1.0, 1.0)
+        yaw_delta = angle_delta(yaw.value, self.center_yaw)
+        abs_yaw_delta = abs(yaw_delta)
+        if self.look_back_active:
+            if abs_yaw_delta <= self.look_back_release_deg:
+                self.look_back_active = False
+        elif abs_yaw_delta >= self.look_back_deg:
+            self.look_back_active = True
+
+        x = clamp(yaw_delta / self.yaw_range, -1.0, 1.0)
         y = clamp((pitch.value - self.center_pitch) / self.pitch_range, -1.0, 1.0)
         if self.invert_yaw:
             x *= -1.0
         if not self.invert_pitch:
             y *= -1.0
-        return int(x * 32767), int(y * 32767)
+        return int(x * 32767), int(y * 32767), self.look_back_active
 
 
 def main():
@@ -241,6 +255,7 @@ def main():
     }
 
     last_trackir = 0.0
+    look_back_pressed = False
     try:
         while running:
             if CENTER_FLAG.exists():
@@ -249,6 +264,8 @@ def main():
                 except FileNotFoundError:
                     pass
                 trackir.recenter_next_pose()
+                look_back_pressed = False
+                ui.write(ecodes.EV_KEY, ecodes.BTN_THUMBR, 0)
                 ui.write(ecodes.EV_ABS, ecodes.ABS_RX, 0)
                 ui.write(ecodes.EV_ABS, ecodes.ABS_RY, 0)
                 ui.syn()
@@ -256,6 +273,8 @@ def main():
             paused = PAUSE_FLAG.exists()
             if paused != trackir.paused:
                 trackir.set_paused(paused)
+                look_back_pressed = False
+                ui.write(ecodes.EV_KEY, ecodes.BTN_THUMBR, 0)
                 ui.write(ecodes.EV_ABS, ecodes.ABS_RX, 0)
                 ui.write(ecodes.EV_ABS, ecodes.ABS_RY, 0)
                 ui.syn()
@@ -278,12 +297,17 @@ def main():
                 if view is not None:
                     ui.write(ecodes.EV_ABS, ecodes.ABS_RX, view[0])
                     ui.write(ecodes.EV_ABS, ecodes.ABS_RY, view[1])
+                    if view[2] != look_back_pressed:
+                        ui.write(ecodes.EV_KEY, ecodes.BTN_THUMBR, 1 if view[2] else 0)
+                        look_back_pressed = view[2]
                     ui.syn()
                 last_trackir = now
     finally:
         try:
             controller.ungrab()
         finally:
+            ui.write(ecodes.EV_KEY, ecodes.BTN_THUMBR, 0)
+            ui.syn()
             ui.close()
             try:
                 PID_FILE.unlink()
