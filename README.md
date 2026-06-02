@@ -108,8 +108,8 @@ MOTOGP20_TRACKIR=0
 Tune TrackIR sensitivity:
 
 ```bash
-MOTOGP20_TRACKIR_YAW_DEG=45
-MOTOGP20_TRACKIR_PITCH_DEG=30
+MOTOGP20_TRACKIR_YAW_DEG=4.5
+MOTOGP20_TRACKIR_PITCH_DEG=3
 ```
 
 Larger `*_DEG` values make head movement less sensitive. Smaller values make it
@@ -118,14 +118,14 @@ more sensitive.
 Invert view axes:
 
 ```bash
-MOTOGP20_TRACKIR_INVERT_YAW=1
+MOTOGP20_TRACKIR_INVERT_YAW=0
 MOTOGP20_TRACKIR_INVERT_PITCH=1
 ```
 
 Example combined launch option:
 
 ```bash
-MOTOGP20_GAMEPAD=/dev/input/event24 MOTOGP20_TRACKIR_YAW_DEG=35 bash -lc '$HOME/.local/bin/motogp20-trackir-gamepad & cleanup(){ $HOME/.local/bin/motogp20-trackir-gamepad-stop; }; trap cleanup EXIT; "$@"; rc=$?; cleanup; exit $rc' -- %command%
+MOTOGP20_GAMEPAD=/dev/input/event24 MOTOGP20_TRACKIR_YAW_DEG=6 bash -lc '$HOME/.local/bin/motogp20-trackir-gamepad & cleanup(){ $HOME/.local/bin/motogp20-trackir-gamepad-stop; }; trap cleanup EXIT; "$@"; rc=$?; cleanup; exit $rc' -- %command%
 ```
 
 ## 🧯 Troubleshooting
