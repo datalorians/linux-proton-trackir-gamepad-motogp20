@@ -17,4 +17,5 @@ while read -r old_pid; do
 done < <(pgrep -f "[p]ython3 .*[/]motogp20-trackir-gamepad($| )" || true)
 
 rm -f "${PID_FILE}"
+rm -f /tmp/motogp20_trackir_recenter /tmp/motogp20_trackir_pause
 echo "Stopped MotoGP 20 TrackIR gamepad adapter."

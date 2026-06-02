@@ -12,6 +12,8 @@ from evdev import AbsInfo, InputDevice, UInput, ecodes, list_devices
 
 STATE_DIR = Path.home() / ".local/state/motogp20-trackir-gamepad"
 PID_FILE = STATE_DIR / "adapter.pid"
+CENTER_FLAG = Path("/tmp/motogp20_trackir_recenter")
+PAUSE_FLAG = Path("/tmp/motogp20_trackir_pause")
 
 
 def die(message):
@@ -31,6 +33,15 @@ def scale(value, src_min, src_max, dst_min, dst_max, invert=False):
     if invert:
         ratio = 1.0 - ratio
     return int(dst_min + ratio * (dst_max - dst_min))
+
+
+def angle_delta(value, center):
+    delta = value - center
+    while delta > 180.0:
+        delta -= 360.0
+    while delta < -180.0:
+        delta += 360.0
+    return delta
 
 
 def find_controller():
@@ -73,11 +84,21 @@ class TrackIR:
         self.enabled = os.environ.get("MOTOGP20_TRACKIR", "1") != "0"
         self.lib = None
         self.ok = False
-        self.yaw_range = float(os.environ.get("MOTOGP20_TRACKIR_YAW_DEG", "4.5"))
-        self.pitch_range = float(os.environ.get("MOTOGP20_TRACKIR_PITCH_DEG", "3"))
+        self.yaw_range = float(os.environ.get("MOTOGP20_TRACKIR_YAW_DEG", "45"))
+        self.pitch_range = float(os.environ.get("MOTOGP20_TRACKIR_PITCH_DEG", "30"))
         self.invert_yaw = os.environ.get("MOTOGP20_TRACKIR_INVERT_YAW", "1") == "1"
         self.invert_pitch = os.environ.get("MOTOGP20_TRACKIR_INVERT_PITCH", "0") == "1"
         self.profile = os.environ.get("MOTOGP20_TRACKIR_PROFILE", "")
+        self.center_yaw = None
+        self.center_pitch = None
+        self.paused = False
+
+    def recenter_next_pose(self):
+        self.center_yaw = None
+        self.center_pitch = None
+
+    def set_paused(self, paused):
+        self.paused = paused
 
     def start(self):
         if not self.enabled:
@@ -119,6 +140,8 @@ class TrackIR:
     def read_right_stick(self):
         if not self.ok:
             return None
+        if self.paused:
+            return 0, 0
         yaw = ctypes.c_float()
         pitch = ctypes.c_float()
         roll = ctypes.c_float()
@@ -137,8 +160,14 @@ class TrackIR:
         )
         if result < 0:
             return None
-        x = clamp(yaw.value / self.yaw_range, -1.0, 1.0)
-        y = clamp(pitch.value / self.pitch_range, -1.0, 1.0)
+        if self.center_yaw is None or self.center_pitch is None:
+            self.center_yaw = yaw.value
+            self.center_pitch = pitch.value
+            print(f"TrackIR centered at yaw={self.center_yaw:.2f}, pitch={self.center_pitch:.2f}.")
+            return 0, 0
+
+        x = clamp(angle_delta(yaw.value, self.center_yaw) / self.yaw_range, -1.0, 1.0)
+        y = clamp((pitch.value - self.center_pitch) / self.pitch_range, -1.0, 1.0)
         if self.invert_yaw:
             x *= -1.0
         if not self.invert_pitch:
@@ -214,6 +243,23 @@ def main():
     last_trackir = 0.0
     try:
         while running:
+            if CENTER_FLAG.exists():
+                try:
+                    CENTER_FLAG.unlink()
+                except FileNotFoundError:
+                    pass
+                trackir.recenter_next_pose()
+                ui.write(ecodes.EV_ABS, ecodes.ABS_RX, 0)
+                ui.write(ecodes.EV_ABS, ecodes.ABS_RY, 0)
+                ui.syn()
+
+            paused = PAUSE_FLAG.exists()
+            if paused != trackir.paused:
+                trackir.set_paused(paused)
+                ui.write(ecodes.EV_ABS, ecodes.ABS_RX, 0)
+                ui.write(ecodes.EV_ABS, ecodes.ABS_RY, 0)
+                ui.syn()
+
             readable, _, _ = select.select([controller.fd], [], [], 0.01)
             for _fd in readable:
                 for event in controller.read():

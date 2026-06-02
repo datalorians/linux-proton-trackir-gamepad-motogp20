@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+flag=/tmp/motogp20_trackir_pause
+if [[ -e "$flag" ]]; then
+  rm -f "$flag"
+  echo "Requested MotoGP 20 TrackIR resume."
+else
+  : > "$flag"
+  echo "Requested MotoGP 20 TrackIR pause."
+fi

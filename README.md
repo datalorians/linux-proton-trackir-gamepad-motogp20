@@ -77,6 +77,10 @@ This installs:
 
 ```text
 ~/.local/bin/motogp20-trackir-gamepad
+~/.local/bin/motogp20-trackir-center
+~/.local/bin/motogp20-trackir-toggle
+~/.local/bin/motogp20-trackir-pause
+~/.local/bin/motogp20-trackir-resume
 ~/.local/bin/motogp20-trackir-gamepad-stop
 ```
 
@@ -108,8 +112,8 @@ MOTOGP20_TRACKIR=0
 Tune TrackIR sensitivity:
 
 ```bash
-MOTOGP20_TRACKIR_YAW_DEG=4.5
-MOTOGP20_TRACKIR_PITCH_DEG=3
+MOTOGP20_TRACKIR_YAW_DEG=45
+MOTOGP20_TRACKIR_PITCH_DEG=30
 ```
 
 Larger `*_DEG` values make head movement less sensitive. Smaller values make it
@@ -122,10 +126,45 @@ MOTOGP20_TRACKIR_INVERT_YAW=0
 MOTOGP20_TRACKIR_INVERT_PITCH=1
 ```
 
+## 🎯 Recentering
+
+The adapter automatically centers TrackIR on the first valid pose it reads.
+Look straight ahead when launching the game for the cleanest startup center.
+
+You can recenter while the adapter is running:
+
+```bash
+~/.local/bin/motogp20-trackir-center
+```
+
+Bind that command to `F9` if you want the familiar TrackIR-style recenter key:
+
+```text
+F9 -> ~/.local/bin/motogp20-trackir-center
+```
+
+The adapter watches for that request and uses the next valid TrackIR pose as
+the new center.
+
+Pause/resume while the adapter is running:
+
+```bash
+~/.local/bin/motogp20-trackir-toggle
+```
+
+Bind that command to `F10` for the familiar TrackIR-style pause/resume key:
+
+```text
+F10 -> ~/.local/bin/motogp20-trackir-toggle
+```
+
+Pause only stops TrackIR from moving the virtual right stick. Your Xbox
+controller passthrough continues to work.
+
 Example combined launch option:
 
 ```bash
-MOTOGP20_GAMEPAD=/dev/input/event24 MOTOGP20_TRACKIR_YAW_DEG=6 bash -lc '$HOME/.local/bin/motogp20-trackir-gamepad & cleanup(){ $HOME/.local/bin/motogp20-trackir-gamepad-stop; }; trap cleanup EXIT; "$@"; rc=$?; cleanup; exit $rc' -- %command%
+MOTOGP20_GAMEPAD=/dev/input/event24 MOTOGP20_TRACKIR_YAW_DEG=35 bash -lc '$HOME/.local/bin/motogp20-trackir-gamepad & cleanup(){ $HOME/.local/bin/motogp20-trackir-gamepad-stop; }; trap cleanup EXIT; "$@"; rc=$?; cleanup; exit $rc' -- %command%
 ```
 
 ## 🧯 Troubleshooting

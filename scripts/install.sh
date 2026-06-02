@@ -7,6 +7,10 @@ mkdir -p "$HOME/.local/bin"
 
 install -m 0755 \
   "$repo_root/bin/motogp20-trackir-gamepad" \
+  "$repo_root/bin/motogp20-trackir-center" \
+  "$repo_root/bin/motogp20-trackir-toggle" \
+  "$repo_root/bin/motogp20-trackir-pause" \
+  "$repo_root/bin/motogp20-trackir-resume" \
   "$repo_root/bin/motogp20-trackir-gamepad-stop" \
   "$HOME/.local/bin/"
 

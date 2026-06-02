@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: > /tmp/motogp20_trackir_pause
+echo "Requested MotoGP 20 TrackIR pause."
