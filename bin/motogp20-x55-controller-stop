@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="${HOME}/.local/state/motogp20-x55-controller"
+PID_FILE="${STATE_DIR}/adapter.pid"
+
+if [[ -f "${PID_FILE}" ]]; then
+  old_pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+  if [[ -n "${old_pid}" ]] && kill -0 "${old_pid}" 2>/dev/null; then
+    kill "${old_pid}" || true
+  fi
+fi
+
+while read -r old_pid; do
+  [[ -n "${old_pid}" ]] || continue
+  kill "${old_pid}" || true
+done < <(pgrep -f "[p]ython3 .*[/]motogp20-x55-controller($| )" || true)
+
+rm -f "${PID_FILE}"
+echo "Stopped MotoGP 20 Saitek X-55 Rhino controller adapter."
