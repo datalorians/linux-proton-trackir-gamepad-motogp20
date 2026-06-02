@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+import ctypes
+import os
+import select
+import signal
+import sys
+import time
+from pathlib import Path
+
+from evdev import AbsInfo, InputDevice, UInput, ecodes, list_devices
+
+
+STATE_DIR = Path.home() / ".local/state/motogp20-trackir-gamepad"
+PID_FILE = STATE_DIR / "adapter.pid"
+
+
+def die(message):
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+def clamp(value, low, high):
+    return max(low, min(high, value))
+
+
+def scale(value, src_min, src_max, dst_min, dst_max, invert=False):
+    if src_max == src_min:
+        return dst_min
+    value = clamp(value, src_min, src_max)
+    ratio = (value - src_min) / (src_max - src_min)
+    if invert:
+        ratio = 1.0 - ratio
+    return int(dst_min + ratio * (dst_max - dst_min))
+
+
+def find_controller():
+    override = os.environ.get("MOTOGP20_GAMEPAD")
+    if override:
+        path = Path(override)
+        if not path.exists():
+            die(f"Controller override path not found: {path}")
+        return InputDevice(str(path))
+
+    candidates = []
+    for path in list_devices():
+        dev = InputDevice(path)
+        name = dev.name.lower()
+        info = dev.info
+        caps = dev.capabilities()
+        has_gamepad_buttons = ecodes.EV_KEY in caps and any(
+            code in [k[0] if isinstance(k, tuple) else k for k in caps[ecodes.EV_KEY]]
+            for code in (ecodes.BTN_SOUTH, ecodes.BTN_EAST, ecodes.BTN_START)
+        )
+        has_sticks = ecodes.EV_ABS in caps and all(
+            code in [a[0] if isinstance(a, tuple) else a for a in caps[ecodes.EV_ABS]]
+            for code in (ecodes.ABS_X, ecodes.ABS_Y)
+        )
+        if not (has_gamepad_buttons and has_sticks):
+            continue
+        if "x-box 360 pad" in name and info.vendor == 0x045E and info.product == 0x028E:
+            continue
+        if "xbox" in name or "x-box" in name or info.vendor == 0x045E:
+            candidates.append(dev)
+
+    if not candidates:
+        die("No Xbox-compatible controller found. Set MOTOGP20_GAMEPAD=/dev/input/eventN if needed.")
+
+    return sorted(candidates, key=lambda d: int(d.path.replace("/dev/input/event", "")))[-1]
+
+
+class TrackIR:
+    def __init__(self):
+        self.enabled = os.environ.get("MOTOGP20_TRACKIR", "1") != "0"
+        self.lib = None
+        self.ok = False
+        self.yaw_range = float(os.environ.get("MOTOGP20_TRACKIR_YAW_DEG", "45"))
+        self.pitch_range = float(os.environ.get("MOTOGP20_TRACKIR_PITCH_DEG", "30"))
+        self.invert_yaw = os.environ.get("MOTOGP20_TRACKIR_INVERT_YAW", "0") == "1"
+        self.invert_pitch = os.environ.get("MOTOGP20_TRACKIR_INVERT_PITCH", "0") == "1"
+        self.profile = os.environ.get("MOTOGP20_TRACKIR_PROFILE", "")
+
+    def start(self):
+        if not self.enabled:
+            return
+
+        prefix = Path(os.environ.get("LINUXTRACK_PREFIX", str(Path.home() / ".local/opt/linuxtrack-trackir")))
+        lib_path = Path(os.environ.get("LINUXTRACK_LIB", str(prefix / "lib/linuxtrack/liblinuxtrack.so.0.0.0")))
+        if not lib_path.exists():
+            print(f"TrackIR requested but LinuxTrack library was not found: {lib_path}", file=sys.stderr)
+            return
+
+        try:
+            self.lib = ctypes.CDLL(str(lib_path))
+            self.init_fn = getattr(self.lib, "linuxtrack_init", None) or getattr(self.lib, "ltr_init")
+            self.pose_fn = getattr(self.lib, "linuxtrack_get_pose", None) or getattr(self.lib, "ltr_get_pose")
+            self.init_fn.argtypes = [ctypes.c_char_p]
+            self.init_fn.restype = ctypes.c_int
+            self.pose_fn.argtypes = [
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_uint32),
+            ]
+            self.pose_fn.restype = ctypes.c_int
+            profile = self.profile.encode() if self.profile else None
+            state = self.init_fn(profile)
+            self.ok = state in (0, 1, 2)
+            if self.ok:
+                print("TrackIR view mapping enabled.")
+            else:
+                print(f"linuxtrack_init returned {state}. Continuing with controller passthrough only.", file=sys.stderr)
+        except Exception as exc:
+            print(f"TrackIR setup failed: {exc}. Continuing with controller passthrough only.", file=sys.stderr)
+            self.ok = False
+
+    def read_right_stick(self):
+        if not self.ok:
+            return None
+        yaw = ctypes.c_float()
+        pitch = ctypes.c_float()
+        roll = ctypes.c_float()
+        tx = ctypes.c_float()
+        ty = ctypes.c_float()
+        tz = ctypes.c_float()
+        counter = ctypes.c_uint32()
+        result = self.pose_fn(
+            ctypes.byref(yaw),
+            ctypes.byref(pitch),
+            ctypes.byref(roll),
+            ctypes.byref(tx),
+            ctypes.byref(ty),
+            ctypes.byref(tz),
+            ctypes.byref(counter),
+        )
+        if result < 0:
+            return None
+        x = clamp(yaw.value / self.yaw_range, -1.0, 1.0)
+        y = clamp(pitch.value / self.pitch_range, -1.0, 1.0)
+        if self.invert_yaw:
+            x *= -1.0
+        if not self.invert_pitch:
+            y *= -1.0
+        return int(x * 32767), int(y * 32767)
+
+
+def main():
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    PID_FILE.write_text(str(os.getpid()))
+
+    controller = find_controller()
+    abs_info = {code: controller.absinfo(code) for code in (
+        ecodes.ABS_X, ecodes.ABS_Y, ecodes.ABS_Z, ecodes.ABS_RX,
+        ecodes.ABS_RY, ecodes.ABS_RZ, ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y,
+    )}
+
+    caps = {
+        ecodes.EV_KEY: [
+            ecodes.BTN_SOUTH, ecodes.BTN_EAST, ecodes.BTN_NORTH, ecodes.BTN_WEST,
+            ecodes.BTN_TL, ecodes.BTN_TR, ecodes.BTN_SELECT, ecodes.BTN_START,
+            ecodes.BTN_MODE, ecodes.BTN_THUMBL, ecodes.BTN_THUMBR,
+        ],
+        ecodes.EV_ABS: [
+            (ecodes.ABS_X, AbsInfo(0, -32768, 32767, 16, 128, 0)),
+            (ecodes.ABS_Y, AbsInfo(0, -32768, 32767, 16, 128, 0)),
+            (ecodes.ABS_RX, AbsInfo(0, -32768, 32767, 16, 128, 0)),
+            (ecodes.ABS_RY, AbsInfo(0, -32768, 32767, 16, 128, 0)),
+            (ecodes.ABS_Z, AbsInfo(0, 0, 255, 0, 0, 0)),
+            (ecodes.ABS_RZ, AbsInfo(0, 0, 255, 0, 0, 0)),
+            (ecodes.ABS_HAT0X, AbsInfo(0, -1, 1, 0, 0, 0)),
+            (ecodes.ABS_HAT0Y, AbsInfo(0, -1, 1, 0, 0, 0)),
+        ],
+    }
+    ui = UInput(caps, name="Microsoft X-Box 360 pad", vendor=0x045E, product=0x028E, version=0x0114, bustype=ecodes.BUS_USB)
+
+    trackir = TrackIR()
+    trackir.start()
+
+    running = True
+
+    def stop(_signum, _frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+
+    try:
+        controller.grab()
+    except OSError as exc:
+        die(f"Could not grab controller {controller.path}: {exc}")
+
+    print(f"Started MotoGP 20 TrackIR gamepad adapter using {controller.name} at {controller.path}.")
+    print("Controller passthrough is active; TrackIR drives the virtual right stick when available.")
+    print(f"PID: {os.getpid()}")
+    sys.stdout.flush()
+
+    passthrough_abs = {
+        ecodes.ABS_X: (-32768, 32767),
+        ecodes.ABS_Y: (-32768, 32767),
+        ecodes.ABS_Z: (0, 255),
+        ecodes.ABS_RZ: (0, 255),
+        ecodes.ABS_HAT0X: (-1, 1),
+        ecodes.ABS_HAT0Y: (-1, 1),
+    }
+    passthrough_keys = {
+        ecodes.BTN_SOUTH, ecodes.BTN_EAST, ecodes.BTN_NORTH, ecodes.BTN_WEST,
+        ecodes.BTN_TL, ecodes.BTN_TR, ecodes.BTN_SELECT, ecodes.BTN_START,
+        ecodes.BTN_MODE, ecodes.BTN_THUMBL, ecodes.BTN_THUMBR,
+    }
+
+    last_trackir = 0.0
+    try:
+        while running:
+            readable, _, _ = select.select([controller.fd], [], [], 0.01)
+            for _fd in readable:
+                for event in controller.read():
+                    if event.type == ecodes.EV_ABS and event.code in passthrough_abs:
+                        info = abs_info.get(event.code)
+                        low, high = passthrough_abs[event.code]
+                        value = event.value if info is None else scale(event.value, info.min, info.max, low, high)
+                        ui.write(ecodes.EV_ABS, event.code, value)
+                    elif event.type == ecodes.EV_KEY and event.code in passthrough_keys:
+                        ui.write(ecodes.EV_KEY, event.code, event.value)
+                    ui.syn()
+
+            now = time.monotonic()
+            if now - last_trackir >= 1.0 / 60.0:
+                view = trackir.read_right_stick()
+                if view is not None:
+                    ui.write(ecodes.EV_ABS, ecodes.ABS_RX, view[0])
+                    ui.write(ecodes.EV_ABS, ecodes.ABS_RY, view[1])
+                    ui.syn()
+                last_trackir = now
+    finally:
+        try:
+            controller.ungrab()
+        finally:
+            ui.close()
+            try:
+                PID_FILE.unlink()
+            except FileNotFoundError:
+                pass
+
+
+if __name__ == "__main__":
+    main()
