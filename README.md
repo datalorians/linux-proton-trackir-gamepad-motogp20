@@ -129,13 +129,15 @@ MOTOGP20_TRACKIR_INVERT_PITCH=1
 Trigger look-behind from a large head turn:
 
 ```bash
-MOTOGP20_TRACKIR_LOOK_BACK_DEG=75
-MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG=55
+MOTOGP20_TRACKIR_LOOK_BACK_DEG=150
+MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG=110
+MOTOGP20_TRACKIR_LOOK_BACK_DIRECTION=left
 ```
 
-When head yaw passes `MOTOGP20_TRACKIR_LOOK_BACK_DEG`, the adapter presses the
-virtual right-stick-click button. It releases after yaw returns below
-`MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG`, which prevents flicker near the edge.
+When head yaw passes `MOTOGP20_TRACKIR_LOOK_BACK_DEG` in the configured
+direction, the adapter presses the virtual right-stick-click button. It releases
+after yaw returns below `MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG`, which prevents
+flicker near the edge.
 
 ## 🎯 Recentering
 

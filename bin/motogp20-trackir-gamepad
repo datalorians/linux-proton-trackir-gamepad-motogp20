@@ -90,8 +90,9 @@ class TrackIR:
         self.pitch_range = float(os.environ.get("MOTOGP20_TRACKIR_PITCH_DEG", "30"))
         self.invert_yaw = os.environ.get("MOTOGP20_TRACKIR_INVERT_YAW", "1") == "1"
         self.invert_pitch = os.environ.get("MOTOGP20_TRACKIR_INVERT_PITCH", "0") == "1"
-        self.look_back_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_DEG", "75"))
-        self.look_back_release_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG", "55"))
+        self.look_back_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_DEG", "150"))
+        self.look_back_release_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG", "110"))
+        self.look_back_direction = os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_DIRECTION", "left").lower()
         self.profile = os.environ.get("MOTOGP20_TRACKIR_PROFILE", "")
         self.center_yaw = None
         self.center_pitch = None
@@ -175,11 +176,12 @@ class TrackIR:
             return 0, 0, False
 
         yaw_delta = angle_delta(yaw.value, self.center_yaw)
-        abs_yaw_delta = abs(yaw_delta)
+        view_yaw_delta = -yaw_delta if self.invert_yaw else yaw_delta
+        look_back_yaw = -view_yaw_delta if self.look_back_direction == "right" else view_yaw_delta
         if self.look_back_active:
-            if abs_yaw_delta <= self.look_back_release_deg:
+            if look_back_yaw >= -self.look_back_release_deg:
                 self.look_back_active = False
-        elif abs_yaw_delta >= self.look_back_deg:
+        elif look_back_yaw <= -self.look_back_deg:
             self.look_back_active = True
 
         x = clamp(yaw_delta / self.yaw_range, -1.0, 1.0)
