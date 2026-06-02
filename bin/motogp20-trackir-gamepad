@@ -90,8 +90,8 @@ class TrackIR:
         self.pitch_range = float(os.environ.get("MOTOGP20_TRACKIR_PITCH_DEG", "30"))
         self.invert_yaw = os.environ.get("MOTOGP20_TRACKIR_INVERT_YAW", "1") == "1"
         self.invert_pitch = os.environ.get("MOTOGP20_TRACKIR_INVERT_PITCH", "0") == "1"
-        self.look_back_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_DEG", "35"))
-        self.look_back_release_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG", "28"))
+        self.look_back_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_DEG", "75"))
+        self.look_back_release_deg = float(os.environ.get("MOTOGP20_TRACKIR_LOOK_BACK_RELEASE_DEG", "55"))
         self.profile = os.environ.get("MOTOGP20_TRACKIR_PROFILE", "")
         self.center_yaw = None
         self.center_pitch = None
